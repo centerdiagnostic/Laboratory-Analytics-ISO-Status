@@ -1,0 +1,645 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lab & ISO Performance Dashboard</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    
+    <!-- ApexCharts สำหรับวาดกราฟ -->
+    <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
+
+    <!-- ตั้งค่าฟอนต์และ Custom CSS เล็กน้อย -->
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        /* Custom Scrollbar สำหรับตาราง */
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #f1f5f9; 
+            border-radius: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #cbd5e1; 
+            border-radius: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8; 
+        }
+        /* Animation Classes */
+        .progress-bar-anim {
+            transition: width 1s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+    </style>
+</head>
+<body class="bg-[#F8FAFC] text-slate-800 min-h-screen p-4 md:p-8">
+
+    <!-- Header Section -->
+    <div class="max-w-7xl mx-auto mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div>
+            <h1 class="text-3xl font-bold tracking-tight text-slate-900 flex items-center gap-3">
+                <i data-lucide="activity" class="w-8 h-8 text-blue-600"></i>
+                Laboratory Analytics & ISO Status
+            </h1>
+            <p class="text-slate-500 mt-1">แดชบอร์ดวิเคราะห์ปริมาณงานทดสอบและสถานะการรับรองมาตรฐาน ISO</p>
+            
+            <!-- Error Banner -->
+            <div id="error-banner" class="hidden mt-4 p-3 bg-red-50 border border-red-200 text-red-600 rounded-lg flex items-center gap-2 text-sm shadow-sm">
+                <i data-lucide="alert-circle" class="w-5 h-5 flex-shrink-0"></i>
+                <span id="error-message" class="font-medium"></span>
+            </div>
+        </div>
+        
+        <div class="flex flex-col sm:flex-row gap-4 w-full md:w-auto">
+            <!-- Year Filter Dropdown -->
+            <div class="relative flex items-center">
+                <div class="absolute left-3 text-slate-400 pointer-events-none">
+                    <i data-lucide="filter" class="w-4 h-4"></i>
+                </div>
+                <select id="year-select" class="pl-9 pr-8 py-2.5 bg-white border border-slate-300 text-slate-700 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none font-medium cursor-pointer w-full sm:w-auto hover:border-blue-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                    <option value="All">รอข้อมูล...</option>
+                </select>
+            </div>
+
+            <!-- Upload Button -->
+            <div class="relative group">
+                <input type="file" id="file-upload" accept=".csv, .xlsx, .xls" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />
+                <button class="w-full sm:w-auto flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-lg shadow-sm transition-all duration-200 font-medium">
+                    <i data-lucide="upload" class="w-4 h-4"></i>
+                    <span>อัปโหลดไฟล์ CSV</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Empty State (หน้าจอรอโหลดข้อมูล) -->
+    <div id="empty-state" class="max-w-7xl mx-auto bg-white rounded-2xl border-2 border-dashed border-slate-300 py-32 flex flex-col items-center justify-center text-center shadow-sm transition-all duration-500">
+        <div class="bg-blue-50 p-4 rounded-full mb-4">
+            <i data-lucide="file-spreadsheet" class="w-12 h-12 text-blue-500"></i>
+        </div>
+        <h3 class="text-xl font-bold text-slate-800 mb-2">ยังไม่มีข้อมูลสำหรับแสดงผล</h3>
+        <p class="text-slate-500 max-w-md">กรุณาคลิกที่ปุ่ม <strong>"อัปโหลดไฟล์ CSV"</strong> ด้านบน เพื่อนำเข้าข้อมูลและเริ่มต้นวิเคราะห์ประสิทธิภาพห้องปฏิบัติการ</p>
+    </div>
+
+    <!-- Dashboard Content (ซ่อนไว้ก่อนจนกว่าจะอัปโหลด) -->
+    <div id="dashboard-content" class="max-w-7xl mx-auto space-y-6 hidden">
+        
+        <!-- KPI Cards Row -->
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
+            
+            <!-- Total Samples Card -->
+            <div class="bg-white rounded-xl p-6 shadow-sm border border-slate-200 flex flex-col relative overflow-hidden group hover:shadow-md transition-shadow">
+                <div class="absolute top-0 right-0 p-4 opacity-5 group-hover:scale-110 transition-transform">
+                    <i data-lucide="beaker" class="w-20 h-20 text-slate-800"></i>
+                </div>
+                <p class="text-sm font-semibold text-slate-500 mb-1 z-10">จำนวนตัวอย่างทั้งหมด</p>
+                <div class="flex items-baseline mb-4 z-10">
+                    <h3 id="kpi-total" class="text-4xl font-bold text-slate-900 tracking-tight">0</h3>
+                    <span id="badge-total" class="hidden flex items-center gap-0.5 px-2 py-0.5 rounded-full text-xs font-semibold ml-2"></span>
+                </div>
+                <div id="label-total" class="mt-auto flex items-center text-xs text-slate-500 font-medium bg-slate-50 w-fit px-2.5 py-1 rounded-md z-10">
+                    ยอดรวมทุกปี
+                </div>
+            </div>
+
+            <!-- ISO Card -->
+            <div class="bg-white rounded-xl p-6 shadow-sm border border-slate-200 flex flex-col relative overflow-hidden group hover:shadow-md transition-shadow">
+                <div class="absolute top-0 right-0 p-4 opacity-5 group-hover:scale-110 transition-transform">
+                    <i data-lucide="check-circle" class="w-20 h-20 text-blue-600"></i>
+                </div>
+                <p class="text-sm font-semibold text-slate-500 mb-1 z-10">สถานะ ISO</p>
+                <div class="flex items-baseline mb-4 z-10">
+                    <h3 id="kpi-iso" class="text-4xl font-bold text-blue-600 tracking-tight">0</h3>
+                    <span id="badge-iso" class="hidden flex items-center gap-0.5 px-2 py-0.5 rounded-full text-xs font-semibold ml-2"></span>
+                </div>
+                <div class="mt-auto w-full bg-slate-100 rounded-full h-1.5 z-10 overflow-hidden">
+                    <div id="bar-iso" class="bg-blue-600 h-full rounded-full progress-bar-anim" style="width: 0%"></div>
+                </div>
+            </div>
+
+            <!-- Non-ISO Card -->
+            <div class="bg-white rounded-xl p-6 shadow-sm border border-slate-200 flex flex-col relative overflow-hidden group hover:shadow-md transition-shadow">
+                <div class="absolute top-0 right-0 p-4 opacity-5 group-hover:scale-110 transition-transform">
+                    <i data-lucide="alert-triangle" class="w-20 h-20 text-amber-500"></i>
+                </div>
+                <p class="text-sm font-semibold text-slate-500 mb-1 z-10">สถานะ Non-ISO</p>
+                <div class="flex items-baseline mb-4 z-10">
+                    <h3 id="kpi-noniso" class="text-4xl font-bold text-amber-500 tracking-tight">0</h3>
+                    <span id="badge-noniso" class="hidden flex items-center gap-0.5 px-2 py-0.5 rounded-full text-xs font-semibold ml-2"></span>
+                </div>
+                <div class="mt-auto w-full bg-slate-100 rounded-full h-1.5 z-10 overflow-hidden">
+                    <div id="bar-noniso" class="bg-amber-500 h-full rounded-full progress-bar-anim" style="width: 0%"></div>
+                </div>
+            </div>
+
+            <!-- Percentage Card -->
+            <div class="bg-gradient-to-br from-blue-700 to-indigo-800 rounded-xl p-6 shadow-md border border-blue-900 flex flex-col relative overflow-hidden text-white group">
+                <p class="text-sm font-semibold text-blue-200 mb-1 z-10">อัตราการผ่าน ISO</p>
+                <h3 class="text-4xl font-bold z-10 tracking-tight">
+                    <span id="kpi-percent">0</span>%
+                </h3>
+                <p class="mt-auto text-xs text-blue-100 z-10 font-medium bg-white/10 w-fit px-2.5 py-1 rounded-md backdrop-blur-sm">
+                    สัดส่วนที่ได้มาตรฐาน
+                </p>
+                
+                <div class="absolute -bottom-8 -right-8 w-40 h-40 bg-white/10 rounded-full blur-2xl group-hover:bg-white/20 transition-all"></div>
+                <div class="absolute -top-6 -left-6 w-24 h-24 bg-white/10 rounded-full blur-xl"></div>
+            </div>
+        </div>
+
+        <!-- Charts Row 1 -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 relative z-0">
+            
+            <!-- Yearly Trend Chart -->
+            <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 lg:col-span-2">
+                <div class="mb-4">
+                    <h3 class="text-lg font-bold text-slate-800">เปรียบเทียบปริมาณงานรายปี (Year-over-Year)</h3>
+                    <p class="text-sm text-slate-500">เส้นกราฟแสดงข้อมูลรวมทุกปีเพื่อดูแนวโน้ม</p>
+                </div>
+                <div id="line-chart" class="w-full h-[350px]"></div>
+            </div>
+
+            <!-- Donut Chart -->
+            <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex flex-col">
+                <h3 class="text-lg font-bold text-slate-800 mb-1">สัดส่วน ISO ภาพรวม</h3>
+                <p id="donut-subtitle" class="text-sm text-slate-500 mb-2">วิเคราะห์จากตัวอย่างทุกปีรวมกัน</p>
+                
+                <div class="relative flex-grow flex items-center justify-center">
+                    <div id="donut-chart" class="w-full h-[280px]"></div>
+                    <!-- Center Text -->
+                    <div class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none pb-4">
+                        <span class="text-4xl font-bold text-slate-800 tracking-tight"><span id="donut-percent-text">0</span>%</span>
+                        <span class="text-xs text-slate-500 font-medium uppercase tracking-wider mt-1">ISO Std.</span>
+                    </div>
+                </div>
+                
+                <!-- Custom Legend -->
+                <div class="flex justify-center gap-6 mt-4 pt-2 border-t border-slate-100">
+                    <div class="flex items-center gap-2">
+                        <div class="w-3 h-3 rounded-full bg-blue-600"></div>
+                        <span id="legend-iso-text" class="text-sm font-medium text-slate-600">ISO (0%)</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <div class="w-3 h-3 rounded-full bg-amber-500"></div>
+                        <span id="legend-noniso-text" class="text-sm font-medium text-slate-600">Non-ISO (0%)</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Charts Row 2 - Lab Performance -->
+        <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+            <div class="mb-6">
+                <h3 class="text-lg font-bold text-slate-800">ประสิทธิภาพจำแนกตามห้องปฏิบัติการ (Lab Performance)</h3>
+                <p id="lab-subtitle" class="text-sm text-slate-500">ปริมาณงานทดสอบเรียงลำดับตามความหนาแน่น (ข้อมูลรวมทุกปี)</p>
+            </div>
+            
+            <div class="w-full overflow-x-auto custom-scrollbar">
+                <!-- Chart container with minimum width -->
+                <div style="min-width: 600px;">
+                    <div id="bar-chart" class="w-full"></div>
+                </div>
+            </div>
+
+            <!-- Data Table Section -->
+            <div class="mt-8 pt-6 border-t border-slate-100">
+                <div class="flex justify-between items-end mb-4">
+                    <h4 class="text-md font-bold text-slate-800">รายละเอียดตัวเลขตามห้องปฏิบัติการ (Data Table)</h4>
+                </div>
+                <div class="overflow-x-auto rounded-lg border border-slate-200 custom-scrollbar">
+                    <table class="w-full text-sm text-left text-slate-600">
+                        <thead class="text-xs text-slate-500 uppercase bg-slate-50 border-b border-slate-200">
+                            <tr>
+                                <th scope="col" class="px-6 py-4 font-semibold whitespace-nowrap">ห้องปฏิบัติการ (Lab)</th>
+                                <th scope="col" class="px-6 py-4 font-semibold text-right whitespace-nowrap">จำนวนทั้งหมด</th>
+                                <th scope="col" class="px-6 py-4 font-semibold text-right text-blue-600 whitespace-nowrap">ISO Certified</th>
+                                <th scope="col" class="px-6 py-4 font-semibold text-right text-amber-500 whitespace-nowrap">Non-ISO</th>
+                                <th scope="col" class="px-6 py-4 font-semibold text-right whitespace-nowrap">% ISO</th>
+                            </tr>
+                        </thead>
+                        <tbody id="table-body">
+                            <!-- Table rows will be populated here by JS -->
+                        </tbody>
+                        <tfoot class="bg-slate-50 border-t border-slate-200 font-bold text-slate-900">
+                            <tr>
+                                <td class="px-6 py-4 text-right">รวมทั้งหมด (Total)</td>
+                                <td id="tfoot-total" class="px-6 py-4 text-right">0</td>
+                                <td id="tfoot-iso" class="px-6 py-4 text-right text-blue-700">0</td>
+                                <td id="tfoot-noniso" class="px-6 py-4 text-right text-amber-600">0</td>
+                                <td id="tfoot-percent" class="px-6 py-4 text-right text-slate-800">0%</td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Application Logic -->
+    <script>
+        // --- 1. State Variables ---
+        let rawData = [];
+        let availableYears = [];
+        let selectedYear = 'All';
+        
+        // กราฟ Instances
+        let lineChartInstance = null;
+        let donutChartInstance = null;
+        let barChartInstance = null;
+
+        const COLORS = {
+            ISO: '#2563EB',      // Blue-600
+            NonISO: '#F59E0B'    // Amber-500
+        };
+
+        // --- 2. Utility Functions (CSV Parser & Animation) ---
+        function parseCSV(text) {
+            const lines = text.split('\n').filter(line => line.trim() !== '');
+            if(lines.length === 0) return [];
+            
+            const headers = lines[0].split(',').map(h => h.trim());
+            const result = [];
+            
+            for (let i = 1; i < lines.length; i++) {
+                const rowRegex = /,(?=(?:(?:[^"]*"){2})*[^"]*$)/; 
+                const currentLine = lines[i].split(rowRegex);
+                
+                if (currentLine.length === headers.length) {
+                    const obj = {};
+                    for (let j = 0; j < headers.length; j++) {
+                        obj[headers[j]] = currentLine[j] ? currentLine[j].replace(/"/g, '').trim() : '';
+                    }
+                    result.push(obj);
+                }
+            }
+            return result;
+        }
+
+        // Animate numbers smoothly
+        function animateValue(id, start, end, duration, isFloat = false) {
+            const obj = document.getElementById(id);
+            if(!obj) return;
+            
+            let startTimestamp = null;
+            const step = (timestamp) => {
+                if (!startTimestamp) startTimestamp = timestamp;
+                const progress = Math.min((timestamp - startTimestamp) / duration, 1);
+                
+                // easeOutQuart
+                const easeProgress = 1 - Math.pow(1 - progress, 4);
+                const currentVal = easeProgress * (end - start) + start;
+                
+                obj.innerHTML = isFloat ? currentVal.toFixed(1) : Math.floor(currentVal).toLocaleString();
+                
+                if (progress < 1) {
+                    window.requestAnimationFrame(step);
+                } else {
+                    obj.innerHTML = isFloat ? end.toFixed(1) : end.toLocaleString();
+                }
+            };
+            window.requestAnimationFrame(step);
+        }
+
+        // --- 3. Main Data Processing Logic ---
+        function processData() {
+            let currentTotalSamples = 0, currentTotalISO = 0, currentTotalNonISO = 0;
+            let prevTotalSamples = 0, prevTotalISO = 0, prevTotalNonISO = 0;
+            
+            const yearlyMap = {};
+            const labMap = {};
+            
+            // หาปีก่อนหน้า
+            let previousYear = null;
+            if (selectedYear !== 'All') {
+                const sortedYears = [...availableYears].sort((a, b) => a.localeCompare(b));
+                const currentIndex = sortedYears.indexOf(selectedYear);
+                if (currentIndex > 0) previousYear = sortedYears[currentIndex - 1];
+            }
+
+            rawData.forEach(row => {
+                const samples = parseInt(row.Number_of_Samples) || 0;
+                const isISO = row.ISO_Status === 'ISO';
+                const year = row.ปี;
+                const lab = row.Lab;
+
+                if (!year || !lab) return;
+
+                // สำหรับกราฟเส้น (รวมทุกปีเสมอ)
+                if (!yearlyMap[year]) yearlyMap[year] = { year, ISO: 0, 'Non-ISO': 0, total: 0 };
+                yearlyMap[year][isISO ? 'ISO' : 'Non-ISO'] += samples;
+                yearlyMap[year].total += samples;
+
+                // ข้อมูลปีปัจจุบัน
+                const isCurrentData = selectedYear === 'All' || year === selectedYear;
+                if (isCurrentData) {
+                    currentTotalSamples += samples;
+                    if (isISO) currentTotalISO += samples;
+                    else currentTotalNonISO += samples;
+
+                    if (!labMap[lab]) labMap[lab] = { lab, ISO: 0, 'Non-ISO': 0, total: 0 };
+                    labMap[lab][isISO ? 'ISO' : 'Non-ISO'] += samples;
+                    labMap[lab].total += samples;
+                }
+
+                // ข้อมูลปีก่อนหน้า
+                if (previousYear && year === previousYear) {
+                    prevTotalSamples += samples;
+                    if (isISO) prevTotalISO += samples;
+                    else prevTotalNonISO += samples;
+                }
+            });
+
+            // คำนวณเปอร์เซ็นต์เปลี่ยนแปลง YoY
+            const calculateChange = (current, prev) => {
+                if (!previousYear || prev === 0) return null;
+                const diff = current - prev;
+                const percent = (diff / prev) * 100;
+                return { value: Math.abs(percent).toFixed(1), isPositive: diff >= 0 };
+            };
+
+            const isoPercentage = currentTotalSamples > 0 ? ((currentTotalISO / currentTotalSamples) * 100) : 0;
+
+            return {
+                kpis: {
+                    totalSamples: currentTotalSamples,
+                    totalISO: currentTotalISO,
+                    totalNonISO: currentTotalNonISO,
+                    isoPercentage: isoPercentage,
+                    changes: {
+                        samples: calculateChange(currentTotalSamples, prevTotalSamples),
+                        iso: calculateChange(currentTotalISO, prevTotalISO),
+                        nonIso: calculateChange(currentTotalNonISO, prevTotalNonISO)
+                    }
+                },
+                yearlyData: Object.values(yearlyMap).sort((a, b) => a.year.localeCompare(b.year)),
+                labData: Object.values(labMap).sort((a, b) => b.total - a.total)
+            };
+        }
+
+        // --- 4. UI Updating Functions ---
+        function updateUI(data) {
+            const { kpis, labData } = data;
+
+            // 4.1 Update KPI Counters
+            const oldTotal = parseInt(document.getElementById('kpi-total').innerText.replace(/,/g, '')) || 0;
+            const oldISO = parseInt(document.getElementById('kpi-iso').innerText.replace(/,/g, '')) || 0;
+            const oldNonISO = parseInt(document.getElementById('kpi-noniso').innerText.replace(/,/g, '')) || 0;
+            const oldPercent = parseFloat(document.getElementById('kpi-percent').innerText) || 0;
+
+            animateValue('kpi-total', oldTotal, kpis.totalSamples, 1200);
+            animateValue('kpi-iso', oldISO, kpis.totalISO, 1200);
+            animateValue('kpi-noniso', oldNonISO, kpis.totalNonISO, 1200);
+            animateValue('kpi-percent', oldPercent, kpis.isoPercentage, 1200, true);
+            animateValue('donut-percent-text', oldPercent, kpis.isoPercentage, 1200, true);
+
+            // 4.2 Update Progress Bars
+            document.getElementById('bar-iso').style.width = `${kpis.isoPercentage}%`;
+            document.getElementById('bar-noniso').style.width = `${100 - kpis.isoPercentage}%`;
+
+            // 4.3 Update Badges (YoY Change)
+            const renderBadge = (elementId, changeObj) => {
+                const el = document.getElementById(elementId);
+                if (!changeObj) {
+                    el.classList.add('hidden');
+                    return;
+                }
+                el.classList.remove('hidden', 'text-emerald-600', 'bg-emerald-50', 'text-rose-600', 'bg-rose-50');
+                
+                const isPos = changeObj.isPositive;
+                el.classList.add(isPos ? 'text-emerald-600' : 'text-rose-600');
+                el.classList.add(isPos ? 'bg-emerald-50' : 'bg-rose-50');
+
+                // SVG Icons for Up/Down
+                const iconSVG = isPos 
+                    ? `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"></polyline><polyline points="16 7 22 7 22 13"></polyline></svg>`
+                    : `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 17 13.5 8.5 8.5 13.5 2 7"></polyline><polyline points="16 17 22 17 22 11"></polyline></svg>`;
+                
+                el.innerHTML = `${iconSVG} ${isPos ? '+' : '-'}${changeObj.value}%`;
+            };
+
+            renderBadge('badge-total', kpis.changes.samples);
+            renderBadge('badge-iso', kpis.changes.iso);
+            renderBadge('badge-noniso', kpis.changes.nonIso);
+
+            // 4.4 Update Text Labels
+            document.getElementById('label-total').innerText = selectedYear === 'All' ? 'ยอดรวมทุกปี' : `ยอดรวมเฉพาะปี ${selectedYear}`;
+            document.getElementById('donut-subtitle').innerText = selectedYear === 'All' ? 'วิเคราะห์จากตัวอย่างทุกปีรวมกัน' : `วิเคราะห์เฉพาะข้อมูลปี ${selectedYear}`;
+            document.getElementById('lab-subtitle').innerText = `ปริมาณงานทดสอบเรียงลำดับตามความหนาแน่น ${selectedYear === 'All' ? '(ข้อมูลรวมทุกปี)' : `(เฉพาะข้อมูลปี ${selectedYear})`}`;
+
+            // Update Donut Legend Text
+            const pIso = kpis.totalSamples > 0 ? ((kpis.totalISO/kpis.totalSamples)*100).toFixed(0) : 0;
+            const pNonIso = kpis.totalSamples > 0 ? ((kpis.totalNonISO/kpis.totalSamples)*100).toFixed(0) : 0;
+            document.getElementById('legend-iso-text').innerText = `ISO (${pIso}%)`;
+            document.getElementById('legend-noniso-text').innerText = `Non-ISO (${pNonIso}%)`;
+
+            // 4.5 Update Table
+            const tbody = document.getElementById('table-body');
+            tbody.innerHTML = labData.map((row, index) => {
+                const percent = row.total > 0 ? ((row.ISO / row.total) * 100).toFixed(1) : '0.0';
+                return `
+                <tr class="bg-white border-b border-slate-100 hover:bg-slate-50 transition-colors ${index === labData.length - 1 ? 'border-b-0' : ''}">
+                    <td class="px-6 py-4 font-semibold text-slate-900">${row.lab}</td>
+                    <td class="px-6 py-4 text-right font-medium text-slate-800">${row.total.toLocaleString()}</td>
+                    <td class="px-6 py-4 text-right font-medium text-blue-600 bg-blue-50/30">${row.ISO.toLocaleString()}</td>
+                    <td class="px-6 py-4 text-right font-medium text-amber-500 bg-amber-50/30">${row['Non-ISO'].toLocaleString()}</td>
+                    <td class="px-6 py-4 text-right font-bold text-slate-700">${percent}%</td>
+                </tr>
+            `}).join('');
+
+            document.getElementById('tfoot-total').innerText = kpis.totalSamples.toLocaleString();
+            document.getElementById('tfoot-iso').innerText = kpis.totalISO.toLocaleString();
+            document.getElementById('tfoot-noniso').innerText = kpis.totalNonISO.toLocaleString();
+            document.getElementById('tfoot-percent').innerText = `${kpis.isoPercentage.toFixed(1)}%`;
+        }
+
+        // --- 5. Chart Operations ---
+        function renderCharts(data) {
+            const { yearlyData, labData, kpis } = data;
+
+            // --- Line Chart (Year-over-Year) ---
+            const lineOptions = {
+                series: [
+                    { name: 'ISO Certified', data: yearlyData.map(d => d.ISO) },
+                    { name: 'Non-ISO', data: yearlyData.map(d => d['Non-ISO']) }
+                ],
+                chart: { 
+                    type: 'line', height: 350, toolbar: { show: false }, fontFamily: 'Inter, sans-serif'
+                },
+                colors: [COLORS.ISO, COLORS.NonISO],
+                stroke: { curve: 'smooth', width: 3 },
+                xaxis: { 
+                    categories: yearlyData.map(d => d.year),
+                    labels: { style: { colors: '#64748B', fontWeight: 500 } },
+                    axisBorder: { show: false }, axisTicks: { show: false }
+                },
+                yaxis: { labels: { style: { colors: '#64748B' } } },
+                grid: { borderColor: '#E2E8F0', strokeDashArray: 4, xaxis: { lines: { show: false } }, yaxis: { lines: { show: true } } },
+                markers: { size: 4, strokeWidth: 2, hover: { size: 7 } },
+                legend: { position: 'bottom', markers: { radius: 12 } },
+                tooltip: { y: { formatter: function (val) { return val.toLocaleString() + " ตัวอย่าง" } } }
+            };
+
+            if(lineChartInstance) lineChartInstance.updateOptions(lineOptions);
+            else {
+                lineChartInstance = new ApexCharts(document.querySelector("#line-chart"), lineOptions);
+                lineChartInstance.render();
+            }
+
+            // --- Donut Chart ---
+            const donutOptions = {
+                series: [kpis.totalISO, kpis.totalNonISO],
+                chart: { type: 'donut', height: 280, fontFamily: 'Inter, sans-serif' },
+                labels: ['ISO Standard', 'Non-ISO'],
+                colors: [COLORS.ISO, COLORS.NonISO],
+                plotOptions: { 
+                    pie: { donut: { size: '75%', labels: { show: false } }, expandOnClick: false } 
+                },
+                dataLabels: { enabled: false },
+                stroke: { show: false },
+                legend: { show: false },
+                tooltip: { y: { formatter: function (val) { return val.toLocaleString() + " ตัวอย่าง" } } }
+            };
+
+            if(donutChartInstance) donutChartInstance.updateOptions(donutOptions);
+            else {
+                donutChartInstance = new ApexCharts(document.querySelector("#donut-chart"), donutOptions);
+                donutChartInstance.render();
+            }
+
+            // --- Bar Chart (Lab Performance) ---
+            const barHeight = Math.max(400, labData.length * 50); // Dynamic height
+            const barOptions = {
+                series: [
+                    { name: 'ISO Certified', data: labData.map(d => d.ISO) },
+                    { name: 'Non-ISO', data: labData.map(d => d['Non-ISO']) }
+                ],
+                chart: { 
+                    type: 'bar', height: barHeight, stacked: true, toolbar: { show: false }, fontFamily: 'Inter, sans-serif' 
+                },
+                colors: [COLORS.ISO, COLORS.NonISO],
+                plotOptions: { bar: { horizontal: true, borderRadius: 3, barHeight: '55%' } },
+                dataLabels: { enabled: false },
+                xaxis: { 
+                    categories: labData.map(d => d.lab),
+                    labels: { style: { colors: '#64748B' } },
+                    axisBorder: { show: false }, axisTicks: { show: false }
+                },
+                yaxis: { 
+                    labels: { style: { colors: '#475569', fontWeight: 600 } }
+                },
+                grid: { borderColor: '#E2E8F0', strokeDashArray: 4, xaxis: { lines: { show: true } }, yaxis: { lines: { show: false } } },
+                legend: { position: 'bottom', markers: { radius: 12 } },
+                tooltip: { y: { formatter: function (val) { return val.toLocaleString() + " ตัวอย่าง" } } }
+            };
+
+            if(barChartInstance) {
+                // Must update options to apply new dynamic height
+                barChartInstance.updateOptions(barOptions);
+            } else {
+                barChartInstance = new ApexCharts(document.querySelector("#bar-chart"), barOptions);
+                barChartInstance.render();
+            }
+        }
+
+        // --- 6. Main Workflow (Init & Events) ---
+        function refreshDashboard() {
+            const data = processData();
+            updateUI(data);
+            renderCharts(data);
+        }
+
+        function populateYearsDropdown() {
+            const select = document.getElementById('year-select');
+            select.innerHTML = '<option value="All">รวมทุกปี (All Years)</option>';
+            
+            // Extract unique years
+            const yearsSet = new Set();
+            rawData.forEach(r => { if(r.ปี) yearsSet.add(r.ปี); });
+            availableYears = Array.from(yearsSet).sort((a, b) => b.localeCompare(a)); // Descending
+            
+            availableYears.forEach(year => {
+                const opt = document.createElement('option');
+                opt.value = year;
+                opt.textContent = `ข้อมูลปี ${year}`;
+                select.appendChild(opt);
+            });
+            
+            select.value = selectedYear;
+            select.disabled = false; // ปลดล็อกปุ่มเลือกปี
+        }
+
+        function showError(msg) {
+            const banner = document.getElementById('error-banner');
+            if (msg) {
+                document.getElementById('error-message').innerText = msg;
+                banner.classList.remove('hidden');
+            } else {
+                banner.classList.add('hidden');
+            }
+        }
+
+        // Initialization
+        document.addEventListener('DOMContentLoaded', () => {
+            // Render Icons
+            lucide.createIcons();
+
+            // หมายเหตุ: ไม่มีการโหลดข้อมูลตั้งต้น (mock data) อีกต่อไป ปล่อยให้หน้าจอแสดง Empty State
+
+            // Event Listener: Change Year
+            document.getElementById('year-select').addEventListener('change', (e) => {
+                selectedYear = e.target.value;
+                refreshDashboard();
+            });
+
+            // Event Listener: File Upload
+            document.getElementById('file-upload').addEventListener('change', (e) => {
+                const file = e.target.files[0];
+                showError(null);
+
+                if (file) {
+                    if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
+                        showError('ไม่สามารถอ่านไฟล์ Excel (.xlsx) ได้โดยตรง กรุณาเปิดไฟล์นี้ใน Excel แล้วกด "Save As" (บันทึกเป็น) เป็นไฟล์นามสกุล .csv (UTF-8) ก่อนอัปโหลดครับ');
+                        e.target.value = ''; // Reset input
+                        return;
+                    }
+
+                    const reader = new FileReader();
+                    reader.onload = (event) => {
+                        try {
+                            const text = event.target.result;
+                            const parsed = parseCSV(text);
+                            if (parsed.length === 0) throw new Error("No data");
+                            
+                            rawData = parsed;
+                            selectedYear = 'All'; // Reset filter to All
+                            
+                            // เปลี่ยนหน้าจอจาก Empty State เป็น Dashboard จริง
+                            document.getElementById('empty-state').classList.add('hidden');
+                            document.getElementById('dashboard-content').classList.remove('hidden');
+
+                            populateYearsDropdown();
+                            refreshDashboard();
+                        } catch (err) {
+                            showError('รูปแบบไฟล์ CSV ไม่ถูกต้อง หรือไม่สามารถอ่านข้อมูลได้ครับ');
+                        }
+                    };
+                    // Use UTF-8 encoding specifically
+                    reader.readAsText(file, "UTF-8");
+                }
+            });
+        });
+
+    </script>
+</body>
+</html>
